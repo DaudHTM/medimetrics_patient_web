@@ -1,6 +1,7 @@
 import React, { useRef, useState } from 'react';
-import { db } from '../firebase';
+import { db, storage } from '../firebase';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { ref as storageRef, uploadString, getDownloadURL } from 'firebase/storage';
 import { useAuth } from '../contexts/AuthContext';
 
 // Sanitize data for Firestore: Firestore rejects nested arrays (arrays containing arrays).
@@ -156,17 +157,39 @@ export default function Scan() {
     }
 
     try {
+      // If the backend returned an annotated image (base64), upload it to Storage first
+      let imageUrl = null;
+      try {
+        const annotated = resultJson && resultJson.annotated_image_b64;
+        if (annotated) {
+          let dataUrl = annotated;
+          if (!dataUrl.startsWith('data:')) {
+            dataUrl = `data:image/png;base64,${dataUrl}`;
+          }
+          const path = `users/${user.uid}/scans/annotated-${Date.now()}-${Math.floor(Math.random() * 1e6)}.png`;
+          const sRef = storageRef(storage, path);
+          // uploadString supports data_url format
+          await uploadString(sRef, dataUrl, 'data_url');
+          imageUrl = await getDownloadURL(sRef);
+        }
+      } catch (imgErr) {
+        // eslint-disable-next-line no-console
+        console.error('Failed to upload annotated image to Storage', imgErr);
+        // Continue without failing the whole upload; the payload will simply omit imageUrl
+      }
+
       const userScansCol = collection(db, 'users', user.uid, 'scans');
       const payload = {
         userId: user.uid,
         createdAt: serverTimestamp(),
         measurements: measurements ? sanitizeForFirestore(measurements) : null,
         resultJson: resultJson ? sanitizeForFirestore(resultJson) : null,
+        imageUrl: imageUrl || null,
       };
 
       const docRef = await addDoc(userScansCol, payload);
       // eslint-disable-next-line no-console
-      console.log('Uploaded scan document:', docRef.id);
+      console.log('Uploaded scan document:', docRef.id, 'imageUrl:', imageUrl);
       alert('Results uploaded successfully');
     } catch (err) {
       // eslint-disable-next-line no-console

@@ -88,6 +88,12 @@ function renderMeasurements(selected) {
 
   return (
     <div>
+      {selected.imageUrl && (
+        <div style={{ marginBottom: 12 }}>
+          <h5>Annotated image</h5>
+          <img src={selected.imageUrl} alt="Annotated" style={{ maxWidth: '100%', borderRadius: 8, border: '1px solid #ddd' }} />
+        </div>
+      )}
       {scale && <div>Scale: {scale} mm/px</div>}
 
       {!hands && (
