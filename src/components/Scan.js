@@ -1,324 +1,318 @@
-import React, { useRef, useState } from 'react';
-import { db, storage } from '../firebase';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
-import { ref as storageRef, uploadString, getDownloadURL } from 'firebase/storage';
+import React, { useRef, useState, useEffect } from 'react';
+import './Scan.css';
 import { useAuth } from '../contexts/AuthContext';
-
-// Sanitize data for Firestore: Firestore rejects nested arrays (arrays containing arrays).
-// This function recursively converts any nested arrays into objects (maps) so the
-// final structure contains arrays of primitives or arrays of maps, which Firestore accepts.
-function sanitizeForFirestore(value) {
-  if (value === null || value === undefined) return null;
-
-  if (Array.isArray(value)) {
-    // Map each element; if an element is itself an array, convert it to an object
-    return value.map((el) => {
-      if (Array.isArray(el)) {
-        const obj = {};
-        el.forEach((sub, i) => {
-          obj[i] = sanitizeForFirestore(sub);
-        });
-        return obj;
-      }
-      return sanitizeForFirestore(el);
-    });
-  }
-
-  if (typeof value === 'object') {
-    const out = {};
-    Object.entries(value).forEach(([k, v]) => {
-      out[k] = sanitizeForFirestore(v);
-    });
-    return out;
-  }
-
-  return value;
-}
+import { storage, db } from '../firebase';
+import { ref as storageRef, uploadString, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 
 export default function Scan() {
-  const videoRef = useRef(null);
-  const canvasRef = useRef(null);
-  const [stream, setStream] = useState(null);
-  const [previewSrc, setPreviewSrc] = useState(null);
-  const [selectedFile, setSelectedFile] = useState(null);
-  const [scanning, setScanning] = useState(false);
-  const [measurements, setMeasurements] = useState(null);
-  const [resultJson, setResultJson] = useState(null);
-  const [error, setError] = useState(null);
-  const { user } = useAuth();
+	const [mode, setMode] = useState('hand');
+	const [imageSrc, setImageSrc] = useState(null);
+		const [loading, setLoading] = useState(false);
+		const [scanResult, setScanResult] = useState(null);
+			const [measurements, setMeasurements] = useState(null);
+			const [scaleMmPerPx, setScaleMmPerPx] = useState(null);
+			const [annotatedImageDataUrl, setAnnotatedImageDataUrl] = useState(null);
+		const [scanTimestamp, setScanTimestamp] = useState(null);
+	const [cameraActive, setCameraActive] = useState(false);
+	const [error, setError] = useState(null);
+	const videoRef = useRef(null);
+	const canvasRef = useRef(null);
+	const streamRef = useRef(null);
+	const fileInputRef = useRef(null);
+	const { user } = useAuth();
+	const [uploadingResults, setUploadingResults] = useState(false);
+	const [uploadError, setUploadError] = useState(null);
+	const [uploadSuccessDocId, setUploadSuccessDocId] = useState(null);
 
-  const startCamera = async () => {
-    try {
-      const s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
-      videoRef.current.srcObject = s;
-      await videoRef.current.play();
-      setStream(s);
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('Could not start camera', err);
-      alert('Could not access camera. Please allow camera permission or use Upload.');
-    }
-  };
+	useEffect(() => {
+		return () => {
+			stopCamera();
+			if (imageSrc && imageSrc.startsWith('blob:')) {
+				URL.revokeObjectURL(imageSrc);
+			}
+		};
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, []);
 
-  const stopCamera = () => {
-    if (stream) {
-      stream.getTracks().forEach((t) => t.stop());
-      setStream(null);
-    }
-    if (videoRef.current) {
-      videoRef.current.pause();
-      videoRef.current.srcObject = null;
-    }
-  };
+	const handleModeChange = (e) => setMode(e.target.value);
 
-  const capture = () => {
-    const video = videoRef.current;
-    const canvas = canvasRef.current;
-    if (!video || !canvas) return;
-    const ctx = canvas.getContext('2d');
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    const dataUrl = canvas.toDataURL('image/png');
-    setPreviewSrc(dataUrl);
-    stopCamera();
-  };
+	const handleUploadClick = () => {
+		if (fileInputRef.current) fileInputRef.current.click();
+	};
 
-  const onFileChange = (e) => {
-    const file = e.target.files && e.target.files[0];
-    if (!file) return;
-    setSelectedFile(file);
-    const reader = new FileReader();
-    reader.onload = () => setPreviewSrc(reader.result);
-    reader.readAsDataURL(file);
-  };
+	const handleFileChange = (e) => {
+		const file = e.target.files && e.target.files[0];
+		if (!file) return;
+		if (!file.type.startsWith('image/')) {
+			setError('Please select an image file');
+			return;
+		}
+		setError(null);
+		if (imageSrc && imageSrc.startsWith('blob:')) URL.revokeObjectURL(imageSrc);
+		const url = URL.createObjectURL(file);
+		setImageSrc(url);
+	};
 
-  const startScan = async () => {
-    if (!previewSrc) {
-      alert('Please capture or upload an image first');
-      return;
-    }
-  setScanning(true);
-  setMeasurements(null);
-  setResultJson(null);
-  setError(null);
-    try {
-      // Build FormData like the Python client example (field name 'file')
-      const form = new FormData();
-      if (selectedFile) {
-        form.append('file', selectedFile, selectedFile.name);
-      } else {
-        // Convert data URL to Blob
-        const resData = await (await fetch(previewSrc)).blob();
-        form.append('file', resData, 'capture.png');
-      }
+	const startCamera = async () => {
+		setError(null);
+		try {
+			const s = await navigator.mediaDevices.getUserMedia({ video: true });
+			streamRef.current = s;
+			if (videoRef.current) {
+				videoRef.current.srcObject = s;
+				videoRef.current.play();
+			}
+			setCameraActive(true);
+		} catch (err) {
+			setError('Unable to access camera: ' + (err.message || err.name));
+		}
+	};
 
-      const res = await fetch('http://127.0.0.1:8000/measure-hand', {
-        method: 'POST',
-        body: form,
-      });
+	const stopCamera = () => {
+		if (streamRef.current) {
+			streamRef.current.getTracks().forEach((t) => t.stop());
+			streamRef.current = null;
+		}
+		if (videoRef.current) {
+			videoRef.current.pause();
+			videoRef.current.srcObject = null;
+		}
+		setCameraActive(false);
+	};
 
-      const json = await res.json().catch(() => null);
+	const handleTakeImageClick = () => {
+		if (cameraActive) {
+			// if already active, stop it
+			stopCamera();
+		} else {
+			startCamera();
+		}
+	};
 
-      if (!res.ok) {
-        const msg = (json && (json.error || JSON.stringify(json))) || `Request failed with status ${res.status}`;
-        setError(msg);
-        return;
-      }
+	const handleCapture = () => {
+		if (!videoRef.current) return;
+		const video = videoRef.current;
+		const canvas = canvasRef.current || document.createElement('canvas');
+		canvas.width = video.videoWidth || 640;
+		canvas.height = video.videoHeight || 480;
+		const ctx = canvas.getContext('2d');
+		ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+		const dataUrl = canvas.toDataURL('image/png');
+		if (imageSrc && imageSrc.startsWith('blob:')) URL.revokeObjectURL(imageSrc);
+		setImageSrc(dataUrl);
+		stopCamera();
+	};
 
-      setResultJson(json);
+		const handleStartScan = async () => {
+			if (!imageSrc) {
+				setError('Please upload or capture an image before starting a scan.');
+				return;
+			}
+			setError(null);
+			setScanResult(null);
+			setLoading(true);
 
-      // Handle example response shape: top-level scale_mm_per_px and result.hands
-      if (json && (json.scale_mm_per_px || json.result)) {
-        const obj = { scale_mm_per_px: json.scale_mm_per_px, result: json.result };
-        setMeasurements(obj);
-      } else if (json && json.measurements) {
-        setMeasurements(json.measurements);
-      } else if (json && json.data) {
-        setMeasurements(json.data);
-      }
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('Scan request failed', err);
-      setError(String(err) || 'Scan failed to fetch');
-    } finally {
-      setScanning(false);
-    }
-  };
+			const endpoint = `http://127.0.0.1:8000/measure-${mode}`;
 
-  const uploadResults = async () => {
-    if (!user) {
-      alert('You must be signed in to upload results');
-      return;
-    }
-    if (!measurements && !resultJson) {
-      alert('No results to upload');
-      return;
-    }
+			try {
+				// Convert the imageSrc (data: or blob:) into a Blob
+				const responseForBlob = await fetch(imageSrc);
+				const blob = await responseForBlob.blob();
 
-    try {
-      // If the backend returned an annotated image (base64), upload it to Storage first
-      let imageUrl = null;
-      try {
-        const annotated = resultJson && resultJson.annotated_image_b64;
-        if (annotated) {
-          let dataUrl = annotated;
-          if (!dataUrl.startsWith('data:')) {
-            dataUrl = `data:image/png;base64,${dataUrl}`;
-          }
-          const path = `users/${user.uid}/scans/annotated-${Date.now()}-${Math.floor(Math.random() * 1e6)}.png`;
-          const sRef = storageRef(storage, path);
-          // uploadString supports data_url format
-          await uploadString(sRef, dataUrl, 'data_url');
-          imageUrl = await getDownloadURL(sRef);
-        }
-      } catch (imgErr) {
-        // eslint-disable-next-line no-console
-        console.error('Failed to upload annotated image to Storage', imgErr);
-        // Continue without failing the whole upload; the payload will simply omit imageUrl
-      }
+				const form = new FormData();
+				// Use a reasonable filename
+				const filename = `${mode}-scan.png`;
+				form.append('file', blob, filename);
 
-      const userScansCol = collection(db, 'users', user.uid, 'scans');
-      const payload = {
-        userId: user.uid,
-        createdAt: serverTimestamp(),
-        measurements: measurements ? sanitizeForFirestore(measurements) : null,
-        resultJson: resultJson ? sanitizeForFirestore(resultJson) : null,
-        imageUrl: imageUrl || null,
-      };
+				const resp = await fetch(endpoint, {
+					method: 'POST',
+					body: form,
+				});
 
-      const docRef = await addDoc(userScansCol, payload);
-      // eslint-disable-next-line no-console
-      console.log('Uploaded scan document:', docRef.id, 'imageUrl:', imageUrl);
-      alert('Results uploaded successfully');
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('Failed to upload results', err);
-      alert('Upload failed: ' + (err.message || String(err)));
-    }
-  };
+				if (!resp.ok) {
+					const text = await resp.text();
+					throw new Error(`Server responded ${resp.status}: ${text}`);
+				}
 
-  return (
-    <div className="tab-panel">
-      <h3>Scan</h3>
+				// Try to parse JSON, fall back to text
+						let body;
+						const contentType = resp.headers.get('content-type') || '';
+						if (contentType.includes('application/json')) {
+							body = await resp.json();
+						} else {
+							// try to parse as json anyway
+							const text = await resp.text();
+							try {
+								body = JSON.parse(text);
+							} catch (e) {
+								body = text;
+							}
+						}
+						setScanResult(body);
 
-      <div className="scan-controls">
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <label className="upload-btn">
-            Upload Image
-            <input type="file" accept="image/*" onChange={onFileChange} style={{ display: 'none' }} />
-          </label>
+						// If body is an object and contains expected fields, store them
+						if (body && typeof body === 'object') {
+							if (body.measurements) setMeasurements(body.measurements);
+							if (body.scale_mm_per_px) setScaleMmPerPx(body.scale_mm_per_px);
+							if (body.annotated_image_b64) {
+								// annotated_image_b64 may include data URI prefix or just base64
+								let b64 = body.annotated_image_b64;
+								// Trim whitespace/newlines
+								b64 = b64.trim();
+								// If it already starts with data:, use directly
+								let dataUrl = b64.startsWith('data:') ? b64 : `data:image/png;base64,${b64}`;
+								setAnnotatedImageDataUrl(dataUrl);
+							}
+							// set timestamp when response received
+							setScanTimestamp(new Date());
+						}
+						
+			} catch (err) {
+				console.error('Scan failed', err);
+				setError('Scan failed: ' + (err.message || err));
+			} finally {
+				setLoading(false);
+			}
+		};
 
-          {!stream && (
-            <button onClick={startCamera} style={{ padding: '8px 12px' }}>Take Image</button>
-          )}
+	// ...existing code...
 
-          {stream && (
-            <button onClick={capture} style={{ padding: '8px 12px' }}>Capture</button>
-          )}
+	const handleUploadResults = async () => {
+		setUploadError(null);
+		setUploadSuccessDocId(null);
+		if (!user) {
+			setUploadError('You must be signed in to upload results.');
+			return;
+		}
+		if (!annotatedImageDataUrl) {
+			setUploadError('No annotated image to upload.');
+			return;
+		}
+		setUploadingResults(true);
+		try {
+			// Upload annotated image to Firebase Storage as a base64 string
+			const ts = Date.now();
+			const path = `users/${user.uid}/annotated-${ts}.png`;
+			// annotatedImageDataUrl is a data URL
+			await uploadString(storageRef(storage, path), annotatedImageDataUrl, 'data_url');
+			const fileUrl = await getDownloadURL(storageRef(storage, path));
 
-          <button onClick={startScan} style={{ padding: '8px 12px' }} disabled={scanning}>
-            {scanning ? 'Scanning…' : 'Start Scan'}
-          </button>
-        </div>
-      </div>
+			// Upload original image to Storage and get URL
+			let originalUrl = null;
+			if (imageSrc) {
+				const origPath = `users/${user.uid}/original-${ts}.png`;
+				if (imageSrc.startsWith('data:')) {
+					await uploadString(storageRef(storage, origPath), imageSrc, 'data_url');
+				} else {
+					const r = await fetch(imageSrc);
+					const b = await r.blob();
+					await uploadBytes(storageRef(storage, origPath), b);
+				}
+				originalUrl = await getDownloadURL(storageRef(storage, origPath));
+			}
 
-      <div style={{ marginTop: 12 }}>
-        {stream && (
-          <div>
-            <video ref={videoRef} style={{ width: '100%', maxHeight: 360, borderRadius: 8 }} />
-            <div style={{ marginTop: 8 }}>
-              <button onClick={stopCamera}>Stop Camera</button>
-            </div>
-          </div>
-        )}
+			// Create Firestore document under users/{uid}/scans
+			const scansCol = collection(db, 'users', user.uid, 'scans');
+			const doc = await addDoc(scansCol, {
+				timestamp: serverTimestamp(),
+				uid: user.uid,
+				scanType: mode,
+				annotatedImageUrl: fileUrl,
+				originalImageUrl: originalUrl,
+				measurements: measurements || null,
+				scale_mm_per_px: scaleMmPerPx || null,
+			});
+			setUploadSuccessDocId(doc.id);
+		} catch (err) {
+			console.error('Upload results failed', err);
+			setUploadError(err.message || String(err));
+		} finally {
+			setUploadingResults(false);
+		}
+	};
 
-        {previewSrc && (
-          <div style={{ marginTop: 12 }}>
-            <div>Preview:</div>
-            <img src={previewSrc} alt="preview" style={{ width: '100%', borderRadius: 8, marginTop: 8 }} />
-          </div>
-        )}
+	return (
+		<div className="scan-container">
+			<h2>Scan</h2>
 
-        {error && <div style={{ color: 'red', marginTop: 12 }}>{error}</div>}
+			<div className="field">
+				<label htmlFor="mode-select">Select target:</label>
+				<select id="mode-select" value={mode} onChange={handleModeChange}>
+					<option value="hand">Hand</option>
+					<option value="face">Face</option>
+				</select>
+			</div>
 
-        {measurements && (
-          <div style={{ marginTop: 12 }}>
-            <h4>Measurements</h4>
-            {measurements.scale_mm_per_px && (
-              <div>Scale: {measurements.scale_mm_per_px} mm/px</div>
-            )}
+			<div className="buttons">
+				<input
+					ref={fileInputRef}
+					type="file"
+					accept="image/*"
+					style={{ display: 'none' }}
+					onChange={handleFileChange}
+				/>
+				<button onClick={handleUploadClick}>Upload Image</button>
+				<button onClick={handleTakeImageClick}>{cameraActive ? 'Stop Camera' : 'Take Image'}</button>
+				<button onClick={handleStartScan}>Start Scan</button>
+			</div>
 
-            {measurements.result && measurements.result.hands && measurements.result.hands.length > 0 && (
-              <div style={{ marginTop: 8 }}>
-                <h5>Hand 1</h5>
-                {(() => {
-                  const hand = measurements.result.hands[0];
-                  return (
-                    <div>
-                      <div style={{ marginBottom: 8 }}>
-                     
-                      </div>
+			{error && <div className="error">{error}</div>}
 
-                      <div>
-                        <strong>Finger segments (phalanges)</strong>
-                        <div style={{ marginTop: 6 }}>
-                          {Object.entries(hand.fingers).map(([fname, finfo]) => (
-                            <div key={fname} style={{ marginBottom: 8 }}>
-                              <div style={{ fontWeight: 700, textTransform: 'capitalize' }}>{fname}</div>
-                              <ul style={{ margin: '6px 0 0 16px' }}>
-                                {finfo.segments.map((seg, idx) => {
-                                  // Map segment indexes to anatomical labels per user's spec:
-                                  // index 0 = Wrist-to-knuckle, 1 = Proximal, 2 = Middle, 3 = Distal
-                                  const labels = ['Wrist-to-knuckle', 'Proximal', 'Middle', 'Distal'];
-                                  const label = idx < labels.length ? labels[idx] : `Segment ${idx + 1}`;
-                                  return (
-                                    <li key={idx}>{label}: {seg.toFixed(2)} mm</li>
-                                  );
-                                })}
-                                <li style={{ marginTop: 4 }}><strong>Total: {finfo.total.toFixed(2)} mm</strong></li>
-                              </ul>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })()}
-              </div>
-            )}
+			{cameraActive && (
+				<div className="camera">
+					<video ref={videoRef} playsInline muted className="video-preview" />
+					<div>
+						<button onClick={handleCapture}>Capture Photo</button>
+						<button onClick={stopCamera}>Cancel</button>
+					</div>
+				</div>
+			)}
 
-            {!measurements.result && (
-              <pre style={{ background: '#f6f6f6', padding: 8, borderRadius: 6 }}>{JSON.stringify(measurements, null, 2)}</pre>
-            )}
-          </div>
-        )}
+			{imageSrc && (
+				<div className="preview">
+					<h3>Preview</h3>
+					<img src={imageSrc} alt="preview" />
+				</div>
+			)}
 
-        {resultJson && (
-          <div style={{ marginTop: 12 }}>
-           
-            {resultJson.annotated_image_b64 && (
-              <div style={{ marginTop: 12 }}>
-                <h4>Annotated Image</h4>
-                <img
-                  src={resultJson.annotated_image_b64.startsWith('data:') ? resultJson.annotated_image_b64 : `data:image/png;base64,${resultJson.annotated_image_b64}`}
-                  alt="Annotated"
-                  style={{ maxWidth: '100%', height: 'auto', border: '1px solid #ccc' }}
-                />
-              </div>
-            )}
-          </div>
-        )}
-        {/* Upload results button placed after annotated image / measurements */}
-        {(measurements || resultJson) && (
-          <div style={{ marginTop: 16 }}>
-            <button onClick={uploadResults} style={{ padding: '8px 12px' }}>Upload Results</button>
-          </div>
-        )}
-      </div>
+					{loading && <div className="loading">Uploading image and running scan...</div>}
 
-      <canvas ref={canvasRef} style={{ display: 'none' }} />
-    </div>
-  );
+					{measurements && (
+						<div className="scan-result">
+							<h3>Scan result</h3>
+							<ul>
+								{Object.entries(measurements).map(([k, v]) => (
+									<li key={k}>{k.replace(/_/g, ' ')}: {Number(v).toFixed(3)} mm</li>
+								))}
+							</ul>
+						</div>
+					)}
+
+							{annotatedImageDataUrl && (
+								<div className="annotated-preview">
+									<h3>Annotated image</h3>
+									<img src={annotatedImageDataUrl} alt="annotated" />
+									{scanTimestamp && (
+										<div className="scan-timestamp">Scanned: {scanTimestamp.toLocaleString()}</div>
+									)}
+								</div>
+							)}
+
+							{scaleMmPerPx && <div className="scale">Scale: {scaleMmPerPx} mm/px</div>}
+
+							<div className="upload-results">
+								<button onClick={handleUploadResults} disabled={uploadingResults || !annotatedImageDataUrl}>
+									{uploadingResults ? 'Uploading...' : 'Upload Results'}
+								</button>
+								{uploadError && <div className="error">{uploadError}</div>}
+								{uploadSuccessDocId && (
+									<div className="success">Uploaded. Doc ID: {uploadSuccessDocId}</div>
+								)}
+							</div>
+
+			<canvas ref={canvasRef} style={{ display: 'none' }} />
+		</div>
+	);
 }
-// Note: the Scan component now only fetches and displays JSON measurements
+

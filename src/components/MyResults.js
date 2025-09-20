@@ -17,22 +17,25 @@ export default function MyResults() {
 
     setLoading(true);
     const scansCol = collection(db, 'users', user.uid, 'scans');
-    const q = query(scansCol, orderBy('createdAt', 'desc'), limit(50));
-    const unsub = onSnapshot(q, (snap) => {
-      const items = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-      setScans(items);
-      setLoading(false);
-    }, (err) => {
-      // eslint-disable-next-line no-console
-      console.error('Failed to listen to scans', err);
-      setLoading(false);
-    });
+    const q = query(scansCol, orderBy('timestamp', 'desc'), limit(200));
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        const items = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        setScans(items);
+        setLoading(false);
+      },
+      (err) => {
+        // eslint-disable-next-line no-console
+        console.error('Failed to listen to scans', err);
+        setLoading(false);
+      }
+    );
 
     return () => unsub();
   }, [user]);
 
   const selectScan = (scan) => {
-    // Toggle: if clicking the already selected scan, collapse it
     if (selected && selected.id === scan.id) {
       setSelected(null);
     } else {
@@ -52,9 +55,19 @@ export default function MyResults() {
 
       <ul className="results-list">
         {scans.map((s) => (
-          <li key={s.id} className="result-item" onClick={() => selectScan(s)} style={{ cursor: 'pointer' }}>
-            <div className="result-title">Scan {s.id}</div>
-            <div className="result-meta">{s.createdAt && s.createdAt.toDate ? s.createdAt.toDate().toLocaleString() : '—'}</div>
+          <li key={s.id} className="result-item" onClick={() => selectScan(s)} style={{ cursor: 'pointer', display: 'flex', gap: 12, alignItems: 'center' }}>
+            <div style={{ width: 88, height: 66, flex: '0 0 88px' }}>
+              {s.annotatedImageUrl ? (
+                <img src={s.annotatedImageUrl} alt={`scan-${s.id}`} style={{ width: '88px', height: '66px', objectFit: 'cover', borderRadius: 6, border: '1px solid #ddd' }} />
+              ) : (
+                <div style={{ width: '88px', height: '66px', background: '#f2f2f2', borderRadius: 6 }} />
+              )}
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 700 }}>{s.scanType ? capitalize(s.scanType) : 'Scan'}</div>
+              <div style={{ color: '#666', fontSize: 12 }}>{formatTimestamp(s.timestamp)}</div>
+            </div>
+            <div style={{ color: '#666', fontSize: 12 }}>{s.measurements ? Object.keys(s.measurements).length + ' measurements' : 'No measurements'}</div>
           </li>
         ))}
       </ul>
@@ -68,7 +81,28 @@ export default function MyResults() {
               <button onClick={() => setSelected(null)} style={{ border: 'none', background: 'transparent', fontSize: 18 }}>✕</button>
             </div>
             <div style={{ marginBottom: 8, color: '#666' }}>ID: {selected.id}</div>
-            <div style={{ marginTop: 8 }}>{renderMeasurements(selected)}</div>
+
+            {selected.annotatedImageUrl && (
+              <div style={{ marginBottom: 12 }}>
+                <h5 style={{ marginBottom: 8 }}>Annotated image</h5>
+                <img src={selected.annotatedImageUrl} alt="Annotated" style={{ maxWidth: '100%', borderRadius: 8, border: '1px solid #ddd' }} />
+                <div style={{ marginTop: 8 }}>
+                  <a href={selected.annotatedImageUrl} target="_blank" rel="noreferrer">Open annotated image</a>
+                </div>
+              </div>
+            )}
+
+            {selected.originalImageUrl && (
+              <div style={{ marginBottom: 12 }}>
+                <h5 style={{ marginBottom: 8 }}>Original image</h5>
+                <a href={selected.originalImageUrl} target="_blank" rel="noreferrer">Open original image</a>
+              </div>
+            )}
+
+            {selected.scanType && <div>Scan type: <strong>{capitalize(selected.scanType)}</strong></div>}
+            {selected.scale_mm_per_px && <div>Scale: {selected.scale_mm_per_px} mm/px</div>}
+
+            {renderMeasurementsSimple(selected)}
           </div>
         </div>
       )}
@@ -76,65 +110,33 @@ export default function MyResults() {
   );
 }
 
-function renderMeasurements(selected) {
-  // Prefer saved 'measurements' then 'resultJson'
-  const data = selected.measurements || selected.resultJson || null;
-  if (!data) return <div>No measurement data saved.</div>;
+function formatTimestamp(ts) {
+  if (!ts) return '—';
+  if (ts.toDate) return ts.toDate().toLocaleString();
+  try {
+    const d = new Date(ts);
+    return isNaN(d.getTime()) ? '—' : d.toLocaleString();
+  } catch (e) {
+    return '—';
+  }
+}
 
-  const scale = data.scale_mm_per_px || (data.scale && data.scale_mm_per_px) || null;
+function capitalize(s) {
+  if (!s) return s;
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
 
-  // Attempt to find hands in the saved structure
-  const hands = (data.result && data.result.hands) || (data.hands) || null;
-
+function renderMeasurementsSimple(selected) {
+  const measurements = selected.measurements || null;
+  if (!measurements) return <div style={{ marginTop: 8 }}>No measurement data saved.</div>;
   return (
-    <div>
-      {selected.imageUrl && (
-        <div style={{ marginBottom: 12 }}>
-          <h5>Annotated image</h5>
-          <img src={selected.imageUrl} alt="Annotated" style={{ maxWidth: '100%', borderRadius: 8, border: '1px solid #ddd' }} />
-        </div>
-      )}
-      {scale && <div>Scale: {scale} mm/px</div>}
-
-      {!hands && (
-        <div style={{ marginTop: 8, background: '#f6f6f6', padding: 8, borderRadius: 6 }}>No hand details found in this scan.</div>
-      )}
-
-      {hands && hands.length > 0 && (
-        <div style={{ marginTop: 8 }}>
-          <h5>Hand 1</h5>
-          {(() => {
-            const hand = hands[0];
-            const fingers = hand.fingers || {};
-            return (
-              <div>
-                <div style={{ marginBottom: 8 }} />
-                <div>
-                  <strong>Finger segments (phalanges)</strong>
-                  <div style={{ marginTop: 6 }}>
-                    {Object.entries(fingers).map(([fname, finfo]) => (
-                      <div key={fname} style={{ marginBottom: 8 }}>
-                        <div style={{ fontWeight: 700, textTransform: 'capitalize' }}>{fname}</div>
-                        <ul style={{ margin: '6px 0 0 16px' }}>
-                          {(finfo.segments || []).map((seg, idx) => {
-                            const labels = ['Wrist-to-knuckle', 'Proximal', 'Middle', 'Distal'];
-                            const label = idx < labels.length ? labels[idx] : `Segment ${idx + 1}`;
-                            const num = typeof seg === 'number' ? seg : (parseFloat(seg) || 0);
-                            return (
-                              <li key={idx}>{label}: {Number(num).toFixed(2)} mm</li>
-                            );
-                          })}
-                          <li style={{ marginTop: 4 }}><strong>Total: {(finfo.total || 0).toFixed ? Number(finfo.total).toFixed(2) : String(finfo.total)}</strong></li>
-                        </ul>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            );
-          })()}
-        </div>
-      )}
+    <div style={{ marginTop: 8, background: '#fff', padding: 8, borderRadius: 6, border: '1px solid #eee' }}>
+      <h5 style={{ marginTop: 0 }}>Measurements</h5>
+      <ul style={{ margin: 0, paddingLeft: 16 }}>
+        {Object.entries(measurements).map(([k, v]) => (
+          <li key={k}>{k.replace(/_/g, ' ')}: {typeof v === 'number' ? Number(v).toFixed(3) : String(v)} mm</li>
+        ))}
+      </ul>
     </div>
   );
 }
