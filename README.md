@@ -1,3 +1,33 @@
+# medimetrics_patient_web
+
+## Firebase setup
+
+This project includes a Firebase initialization file at `src/firebase.js` which uses the modular Firebase SDK (v9+).
+
+1. Install Firebase (if not already installed):
+
+	npm install firebase
+
+2. Create a `.env.local` in the project root (do not commit this file). Add your Firebase config values using the `REACT_APP_` prefix:
+
+```
+REACT_APP_FIREBASE_API_KEY=your_api_key_here
+REACT_APP_FIREBASE_AUTH_DOMAIN=your_project.firebaseapp.com
+REACT_APP_FIREBASE_PROJECT_ID=your_project_id
+REACT_APP_FIREBASE_STORAGE_BUCKET=your_project.appspot.com
+REACT_APP_FIREBASE_MESSAGING_SENDER_ID=messaging_sender_id
+REACT_APP_FIREBASE_APP_ID=app_id
+REACT_APP_FIREBASE_MEASUREMENT_ID=G-measurement_id (optional)
+```
+
+3. Restart the dev server after adding `.env.local` so Create React App picks up the environment variables.
+
+4. Import services in your components, for example:
+
+```js
+import { auth, db, storage } from './firebase';
+```
+
 # Getting Started with Create React App
 
 This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
