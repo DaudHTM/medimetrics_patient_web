@@ -1,4 +1,38 @@
 import React, { useRef, useState } from 'react';
+import { db } from '../firebase';
+import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { useAuth } from '../contexts/AuthContext';
+
+// Sanitize data for Firestore: Firestore rejects nested arrays (arrays containing arrays).
+// This function recursively converts any nested arrays into objects (maps) so the
+// final structure contains arrays of primitives or arrays of maps, which Firestore accepts.
+function sanitizeForFirestore(value) {
+  if (value === null || value === undefined) return null;
+
+  if (Array.isArray(value)) {
+    // Map each element; if an element is itself an array, convert it to an object
+    return value.map((el) => {
+      if (Array.isArray(el)) {
+        const obj = {};
+        el.forEach((sub, i) => {
+          obj[i] = sanitizeForFirestore(sub);
+        });
+        return obj;
+      }
+      return sanitizeForFirestore(el);
+    });
+  }
+
+  if (typeof value === 'object') {
+    const out = {};
+    Object.entries(value).forEach(([k, v]) => {
+      out[k] = sanitizeForFirestore(v);
+    });
+    return out;
+  }
+
+  return value;
+}
 
 export default function Scan() {
   const videoRef = useRef(null);
@@ -10,6 +44,7 @@ export default function Scan() {
   const [measurements, setMeasurements] = useState(null);
   const [resultJson, setResultJson] = useState(null);
   const [error, setError] = useState(null);
+  const { user } = useAuth();
 
   const startCamera = async () => {
     try {
@@ -110,6 +145,36 @@ export default function Scan() {
     }
   };
 
+  const uploadResults = async () => {
+    if (!user) {
+      alert('You must be signed in to upload results');
+      return;
+    }
+    if (!measurements && !resultJson) {
+      alert('No results to upload');
+      return;
+    }
+
+    try {
+      const userScansCol = collection(db, 'users', user.uid, 'scans');
+      const payload = {
+        userId: user.uid,
+        createdAt: serverTimestamp(),
+        measurements: measurements ? sanitizeForFirestore(measurements) : null,
+        resultJson: resultJson ? sanitizeForFirestore(resultJson) : null,
+      };
+
+      const docRef = await addDoc(userScansCol, payload);
+      // eslint-disable-next-line no-console
+      console.log('Uploaded scan document:', docRef.id);
+      alert('Results uploaded successfully');
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('Failed to upload results', err);
+      alert('Upload failed: ' + (err.message || String(err)));
+    }
+  };
+
   return (
     <div className="tab-panel">
       <h3>Scan</h3>
@@ -169,23 +234,30 @@ export default function Scan() {
                   return (
                     <div>
                       <div style={{ marginBottom: 8 }}>
-                        <strong>Fingers</strong>
-                        <ul>
-                          {Object.entries(hand.fingers).map(([name, info]) => (
-                            <li key={name}>
-                              {name}: total = {info.total.toFixed(2)} mm; segments = [{info.segments.map(s=>s.toFixed(2)).join(', ')}]
-                            </li>
-                          ))}
-                        </ul>
+                     
                       </div>
 
                       <div>
-                        <strong>Landmarks (first 5 shown)</strong>
-                        <ol>
-                          {hand.landmarks_px.slice(0, 5).map((pt, i) => (
-                            <li key={i}>px: [{pt[0].toFixed(1)}, {pt[1].toFixed(1)}] — mm: [{hand.landmarks_mm[i][0].toFixed(1)}, {hand.landmarks_mm[i][1].toFixed(1)}]</li>
+                        <strong>Finger segments (phalanges)</strong>
+                        <div style={{ marginTop: 6 }}>
+                          {Object.entries(hand.fingers).map(([fname, finfo]) => (
+                            <div key={fname} style={{ marginBottom: 8 }}>
+                              <div style={{ fontWeight: 700, textTransform: 'capitalize' }}>{fname}</div>
+                              <ul style={{ margin: '6px 0 0 16px' }}>
+                                {finfo.segments.map((seg, idx) => {
+                                  // Map segment indexes to anatomical labels per user's spec:
+                                  // index 0 = Wrist-to-knuckle, 1 = Proximal, 2 = Middle, 3 = Distal
+                                  const labels = ['Wrist-to-knuckle', 'Proximal', 'Middle', 'Distal'];
+                                  const label = idx < labels.length ? labels[idx] : `Segment ${idx + 1}`;
+                                  return (
+                                    <li key={idx}>{label}: {seg.toFixed(2)} mm</li>
+                                  );
+                                })}
+                                <li style={{ marginTop: 4 }}><strong>Total: {finfo.total.toFixed(2)} mm</strong></li>
+                              </ul>
+                            </div>
                           ))}
-                        </ol>
+                        </div>
                       </div>
                     </div>
                   );
@@ -201,8 +273,7 @@ export default function Scan() {
 
         {resultJson && (
           <div style={{ marginTop: 12 }}>
-            <h4>Full response</h4>
-            <pre style={{ background: '#f6f6f6', padding: 8, borderRadius: 6, maxHeight: 300, overflow: 'auto' }}>{JSON.stringify(resultJson, null, 2)}</pre>
+           
             {resultJson.annotated_image_b64 && (
               <div style={{ marginTop: 12 }}>
                 <h4>Annotated Image</h4>
@@ -213,6 +284,12 @@ export default function Scan() {
                 />
               </div>
             )}
+          </div>
+        )}
+        {/* Upload results button placed after annotated image / measurements */}
+        {(measurements || resultJson) && (
+          <div style={{ marginTop: 16 }}>
+            <button onClick={uploadResults} style={{ padding: '8px 12px' }}>Upload Results</button>
           </div>
         )}
       </div>

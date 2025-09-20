@@ -161,3 +161,44 @@
     height: 100vh;
   }
 }
+
+/* Modal styles for scan details */
+.modal-backdrop {
+  position: fixed;
+  left: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0,0,0,0.35);
+  z-index: 40;
+}
+.modal-panel {
+  position: fixed;
+  left: 50%;
+  top: 12%;
+  transform: translateX(-50%);
+  width: calc(100% - 40px);
+  max-width: 720px;
+  background: #fff;
+  border-radius: 10px;
+  padding: 16px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+  z-index: 50;
+  border: 1px solid #e6e6e6;
+}
+
+@media (min-width: 720px) {
+  .modal-panel {
+    top: 8%;
+  }
+}
+
+/* Make modal scrollable when content is tall */
+.modal-panel {
+  max-height: calc(100vh - 96px);
+  overflow: auto;
+}
+
+.modal-panel > *:not(:first-child) {
+  margin-top: 12px;
+}
