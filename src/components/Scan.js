@@ -120,7 +120,7 @@ export default function Scan() {
 			setLoading(true);
 
 			// Use environment variable API_BASE if provided, otherwise fall back to localhost
-			const API_BASE = (process && process.env && process.env.API_BASE);
+			const API_BASE =  process.env.REACT_APP_API_BASE;
 			const endpoint = `${API_BASE.replace(/\/$/, '')}/measure-${mode}`;
 
 			
