@@ -87,6 +87,45 @@ export default function PersonnelHome(){
     }
   };
 
+  const exportToCSV = (scan) => {
+    if (!scan || !scan.measurements) {
+      alert('No measurements to export');
+      return;
+    }
+
+    // Create CSV content
+    const headers = ['Measurement', 'Value (mm)', 'Timestamp', 'Patient', 'Scan ID', 'Scan Type'];
+    const timestamp = formatTimestamp(scan.timestamp);
+    const patientName = scan.patientName || scan.patientUid;
+    const scanType = scan.scanType || 'Unknown';
+
+    const rows = Object.entries(scan.measurements).map(([key, value]) => [
+      key.replace(/_/g, ' '),
+      typeof value === 'number' ? Number(value).toFixed(3) : String(value),
+      timestamp,
+      patientName,
+      scan.id,
+      scanType
+    ]);
+
+    // Convert to CSV format
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(row => row.map(field => `"${field}"`).join(','))
+    ].join('\n');
+
+    // Create and download file
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `measurements_${patientName}_${scan.id}_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   return (
     <div className="container">
       <div className="page-header">
@@ -167,6 +206,17 @@ export default function PersonnelHome(){
             )}
             {selectedScan.scale_mm_per_px && <div className="meta">Scale: {selectedScan.scale_mm_per_px} mm/px</div>}
             <div style={{ marginTop: 8 }}>{renderMeasurementsInline(selectedScan)}</div>
+            
+            {/* Export button */}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16, paddingTop: 16, borderTop: '1px solid #eee' }}>
+              <button 
+                className="btn btn-primary" 
+                onClick={() => exportToCSV(selectedScan)}
+                disabled={!selectedScan.measurements || Object.keys(selectedScan.measurements).length === 0}
+              >
+                📊 Export CSV
+              </button>
+            </div>
           </div>
         </div>
       )}
