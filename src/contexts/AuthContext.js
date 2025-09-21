@@ -3,12 +3,20 @@ import { auth, db } from '../firebase';
 import {
   GoogleAuthProvider,
   signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
   signOut as firebaseSignOut,
   onAuthStateChanged,
 } from 'firebase/auth';
 import { doc, getDoc, setDoc, updateDoc, arrayUnion } from 'firebase/firestore';
 
 const AuthContext = createContext();
+
+// Helper function to detect mobile devices
+const isMobileDevice = () => {
+  return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
+         (window.screen && window.screen.width < 768);
+};
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
@@ -20,13 +28,24 @@ export function AuthProvider({ children }) {
   const signInWithGoogle = async () => {
     try {
       setLoading(true);
-      await signInWithPopup(auth, provider);
+      
+      if (isMobileDevice()) {
+        // Use redirect flow for mobile devices
+        await signInWithRedirect(auth, provider);
+      } else {
+        // Use popup flow for desktop
+        await signInWithPopup(auth, provider);
+      }
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error('Google sign-in error', err);
       throw err;
     } finally {
-      setLoading(false);
+      // Only set loading to false for popup flow
+      // For redirect flow, the page will reload so this won't execute
+      if (!isMobileDevice()) {
+        setLoading(false);
+      }
     }
   };
 
@@ -40,6 +59,21 @@ export function AuthProvider({ children }) {
   };
 
   useEffect(() => {
+    // Handle redirect result first (for mobile sign-in)
+    const handleRedirectResult = async () => {
+      try {
+        const result = await getRedirectResult(auth);
+        if (result) {
+          // User successfully signed in via redirect
+          console.log('Redirect sign-in successful', result.user);
+        }
+      } catch (err) {
+        console.error('Redirect sign-in error', err);
+      }
+    };
+
+    handleRedirectResult();
+
     const unsubscribe = onAuthStateChanged(auth, (u) => {
       setUser(u);
       // when auth state changes, determine role from Firestore
