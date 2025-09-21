@@ -20,32 +20,36 @@ const isMobileDevice = () => {
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true);
+  // Check if we're expecting a redirect result on initial load
+  const [loading, setLoading] = useState(
+    localStorage.getItem('authRedirectPending') === 'true' || true
+  );
   const [role, setRole] = useState(null); // 'patient' | 'hcp' | null (unknown)
   const [showRolePrompt, setShowRolePrompt] = useState(false);
   const provider = new GoogleAuthProvider();
 
   const signInWithGoogle = async () => {
     try {
-      setLoading(true);
-      
       if (isMobileDevice()) {
         // Use redirect flow for mobile devices
+        // Set loading state in localStorage so it persists through redirect
+        localStorage.setItem('authRedirectPending', 'true');
+        setLoading(true);
         await signInWithRedirect(auth, provider);
+        // Note: this code won't execute because the page will redirect
       } else {
         // Use popup flow for desktop
+        setLoading(true);
         await signInWithPopup(auth, provider);
+        setLoading(false);
       }
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error('Google sign-in error', err);
+      // Clear the pending flag if there was an error
+      localStorage.removeItem('authRedirectPending');
+      setLoading(false);
       throw err;
-    } finally {
-      // Only set loading to false for popup flow
-      // For redirect flow, the page will reload so this won't execute
-      if (!isMobileDevice()) {
-        setLoading(false);
-      }
     }
   };
 
@@ -59,25 +63,48 @@ export function AuthProvider({ children }) {
   };
 
   useEffect(() => {
+    let mounted = true;
+
     // Handle redirect result first (for mobile sign-in)
     const handleRedirectResult = async () => {
       try {
+        // Check if we were expecting a redirect result
+        const wasRedirectPending = localStorage.getItem('authRedirectPending') === 'true';
+        
+        if (wasRedirectPending) {
+          setLoading(true);
+        }
+        
         const result = await getRedirectResult(auth);
-        if (result) {
+        if (result && mounted) {
           // User successfully signed in via redirect
           console.log('Redirect sign-in successful', result.user);
+          localStorage.removeItem('authRedirectPending');
+          // Don't set loading to false here - let onAuthStateChanged handle it
+        } else if (mounted) {
+          // No redirect result
+          localStorage.removeItem('authRedirectPending');
+          if (!wasRedirectPending) {
+            // Only set loading to false if we weren't expecting a redirect
+            setLoading(false);
+          }
         }
       } catch (err) {
         console.error('Redirect sign-in error', err);
+        localStorage.removeItem('authRedirectPending');
+        if (mounted) {
+          setLoading(false);
+        }
       }
     };
 
-    handleRedirectResult();
-
     const unsubscribe = onAuthStateChanged(auth, (u) => {
+      if (!mounted) return;
+      
       setUser(u);
       // when auth state changes, determine role from Firestore
       (async () => {
+        if (!mounted) return;
         setLoading(true);
         setRole(null);
         setShowRolePrompt(false);
@@ -89,9 +116,11 @@ export function AuthProvider({ children }) {
             if (userSnap.exists()) {
               const data = userSnap.data();
               if (data && data.role) {
-                setRole(data.role);
-                setShowRolePrompt(false);
-                setLoading(false);
+                if (mounted) {
+                  setRole(data.role);
+                  setShowRolePrompt(false);
+                  setLoading(false);
+                }
                 return;
               }
             }
@@ -105,27 +134,40 @@ export function AuthProvider({ children }) {
               const found = members.find((m) => m.uid === u.uid || m.email === u.email);
               if (found) {
                 // treat as hcp
-                setRole('hcp');
-                // also ensure users/{uid} has role
-                await setDoc(userDocRef, { role: 'hcp', email: u.email, uid: u.uid }, { merge: true });
-                setLoading(false);
+                if (mounted) {
+                  setRole('hcp');
+                  // also ensure users/{uid} has role
+                  await setDoc(userDocRef, { role: 'hcp', email: u.email, uid: u.uid }, { merge: true });
+                  setLoading(false);
+                }
                 return;
               }
             }
 
             // otherwise, no known role — prompt the user to choose
-            setRole(null);
-            setShowRolePrompt(true);
+            if (mounted) {
+              setRole(null);
+              setShowRolePrompt(true);
+            }
           }
         } catch (err) {
           // eslint-disable-next-line no-console
           console.error('Error resolving user role', err);
         } finally {
-          setLoading(false);
+          if (mounted) {
+            setLoading(false);
+          }
         }
       })();
     });
-    return () => unsubscribe();
+
+    // Start by handling any pending redirect result
+    handleRedirectResult();
+
+    return () => {
+      mounted = false;
+      unsubscribe();
+    };
   }, []);
 
   // set role helper used by RoleSelect component
