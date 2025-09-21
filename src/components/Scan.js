@@ -119,10 +119,11 @@ export default function Scan() {
 			setScanResult(null);
 			setLoading(true);
 
-			// Use environment variable REACT_APP_API_BASE if provided, otherwise fall back to localhost
-			const API_BASE = (process && process.env && process.env.REACT_APP_API_BASE) ? process.env.REACT_APP_API_BASE : 'http://127.0.0.1:8000';
+			// Use environment variable API_BASE if provided, otherwise fall back to localhost
+			const API_BASE = (process && process.env && process.env.API_BASE);
 			const endpoint = `${API_BASE.replace(/\/$/, '')}/measure-${mode}`;
 
+			
 			try {
 				// Convert the imageSrc (data: or blob:) into a Blob
 				const responseForBlob = await fetch(imageSrc);
