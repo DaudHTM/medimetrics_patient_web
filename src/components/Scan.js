@@ -38,7 +38,7 @@ export default function Scan() {
 
 	const handleModeChange = (e) => setMode(e.target.value);
 
-	// Helper to make measurement keys human-friendly
+	// Helper to make meddfasurement keys human-friendly
 	const prettifyKey = (k) => {
 		if (!k) return '';
 		return k.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
