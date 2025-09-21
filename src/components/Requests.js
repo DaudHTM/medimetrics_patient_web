@@ -50,22 +50,29 @@ export default function Requests() {
   };
 
   return (
-    <div className="tab-panel">
-      <h3>Requests</h3>
+    <div className="tab-panel container">
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <h3 style={{ margin: 0 }}>Requests</h3>
+      </div>
       {loading && <div>Loading…</div>}
       {!loading && requests.length === 0 && <div>No requests found.</div>}
-      <ul>
+      <ul style={{ listStyle: 'none', padding: 0, marginTop: 12 }}>
         {requests.map((r) => (
-          <li key={r.id} style={{ marginBottom: 8 }}>
-            <div><strong>Request from:</strong> {r.requestedBy?.email || 'Unknown'}</div>
-            <div><strong>Status:</strong> {r.status}</div>
-            <div style={{ marginTop: 6 }}>
-              {r.status === 'pending' && (
-                <>
-                  <button onClick={() => respond(r, true)} style={{ marginRight: 8 }}>Accept</button>
-                  <button onClick={() => respond(r, false)}>Decline</button>
-                </>
-              )}
+          <li key={r.id} className="card" style={{ marginBottom: 12 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <div style={{ fontWeight: 700 }}>{r.requestedBy?.email || 'Unknown'}</div>
+                <div className="meta">Requested {r.createdAt && r.createdAt.toDate ? r.createdAt.toDate().toLocaleString() : ''}</div>
+              </div>
+              <div style={{ textAlign: 'right' }}>
+                <div className="meta">Status: {r.status}</div>
+                {r.status === 'pending' && (
+                  <div style={{ marginTop: 8 }}>
+                    <button className="btn btn-primary" onClick={() => respond(r, true)} style={{ marginRight: 8 }}>Accept</button>
+                    <button className="btn btn-ghost" onClick={() => respond(r, false)}>Decline</button>
+                  </div>
+                )}
+              </div>
             </div>
           </li>
         ))}

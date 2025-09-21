@@ -88,39 +88,44 @@ export default function PersonnelHome(){
   };
 
   return (
-    <div style={{ padding: 24 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h2>Healthcare Personnel</h2>
+    <div className="container">
+      <div className="page-header">
+        <div>
+          <div className="title-lg">Healthcare Personnel</div>
+          <div className="subtitle">Welcome{user && user.displayName ? `, ${user.displayName}` : ''}. This view is for healthcare personnel.</div>
+        </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button onClick={openModal} style={{ padding: '8px 12px' }}>Send request</button>
-          <button onClick={() => signOutUser()} style={{ padding: '8px 12px' }}>Sign out</button>
+          <button className="btn btn-primary" onClick={openModal}>Send request</button>
+          <button className="btn btn-ghost" onClick={() => signOutUser()}>Sign out</button>
         </div>
       </div>
-      <p>Welcome{user && user.displayName ? `, ${user.displayName}` : ''}. This view is for healthcare personnel.</p>
 
       {showModal && (
-        <div style={{ position: 'fixed', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.45)', zIndex: 1200 }}>
-          <div style={{ background: '#fff', padding: 18, borderRadius: 8, width: 420, maxWidth: '94%' }}>
-            <h3 style={{ marginTop: 0 }}>Send request</h3>
+        <div className="modal-backdrop">
+          <div className="modal-panel card" role="dialog" aria-modal="true" style={{ width: 420, maxWidth: '94%' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ margin: 0 }}>Send request</h3>
+              <button className="modal-close" onClick={() => setShowModal(false)}>✕</button>
+            </div>
             <p>Enter the email address of the person you want to get measurements from:</p>
-            <input value={requestEmail} onChange={(e) => setRequestEmail(e.target.value)} placeholder="email@example.com" style={{ width: '100%', padding: 8, marginBottom: 8 }} />
-            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-              <button onClick={() => setShowModal(false)} disabled={sending}>Cancel</button>
-              <button onClick={sendRequest} disabled={sending}>{sending ? 'Sending...' : 'Done'}</button>
+            <input value={requestEmail} onChange={(e) => setRequestEmail(e.target.value)} placeholder="email@example.com" />
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 8 }}>
+              <button className="btn btn-ghost" onClick={() => setShowModal(false)} disabled={sending}>Cancel</button>
+              <button className="btn btn-primary" onClick={sendRequest} disabled={sending}>{sending ? 'Sending...' : 'Done'}</button>
             </div>
             {message && (
-              <div style={{ marginTop: 8, color: message.type === 'error' ? '#b00020' : 'green' }}>{message.text}</div>
+              <div style={{ marginTop: 8, color: message.type === 'error' ? '#b00020' : 'var(--cyan-700)' }}>{message.text}</div>
             )}
           </div>
         </div>
       )}
 
-      <hr style={{ margin: '18px 0' }} />
-      <h3>Authorized patient scans</h3>
-      {loadingPatients && <div>Loading patients…</div>}
-      {!loadingPatients && patientScans.length === 0 && <div>No patient scans available yet.</div>}
-      <ul style={{ listStyle: 'none', padding: 0 }}>
-        {patientScans
+      <div style={{ marginTop: '18px' }}>
+        <h3>Authorized patient scans</h3>
+        {loadingPatients && <div>Loading patients…</div>}
+        {!loadingPatients && patientScans.length === 0 && <div>No patient scans available yet.</div>}
+        <ul style={{ listStyle: 'none', padding: 0 }}>
+          {patientScans
           .slice()
           .sort((a, b) => {
             const ta = a.timestamp && a.timestamp.toDate ? a.timestamp.toDate().getTime() : (a.timestamp ? new Date(a.timestamp).getTime() : 0);
@@ -128,38 +133,39 @@ export default function PersonnelHome(){
             return tb - ta;
           })
           .map((s) => (
-            <li key={`${s.patientUid}-${s.id}`} style={{ display: 'flex', gap: 12, alignItems: 'center', padding: 8, borderBottom: '1px solid #eee', cursor: 'pointer' }} onClick={() => setSelectedScan(s)}>
-              <div style={{ width: 88, height: 66, flex: '0 0 88px' }}>
+            <li key={`${s.patientUid}-${s.id}`} className="list-item card" onClick={() => setSelectedScan(s)}>
+              <div className="thumb">
                 {s.annotatedImageUrl ? (
-                  <img src={s.annotatedImageUrl} alt={`scan-${s.id}`} style={{ width: '88px', height: '66px', objectFit: 'cover', borderRadius: 6, border: '1px solid #ddd' }} />
+                  <img src={s.annotatedImageUrl} alt={`scan-${s.id}`} />
                 ) : (
-                  <div style={{ width: '88px', height: '66px', background: '#f2f2f2', borderRadius: 6 }} />
+                  <div style={{ width: '88px', height: '66px', background: '#eefcff' }} />
                 )}
               </div>
               <div style={{ flex: 1 }}>
-                <div style={{ fontWeight: 700 }}>{s.patientName || s.patientUid}</div>
-                <div style={{ color: '#666', fontSize: 12 }}>{formatTimestamp(s.timestamp)}</div>
+                <div className="patient-name">{s.patientName || s.patientUid}</div>
+                <div className="meta">{formatTimestamp(s.timestamp)}</div>
               </div>
-              <div style={{ color: '#666', fontSize: 12 }}>{s.measurements ? Object.keys(s.measurements).length + ' measurements' : 'No measurements'}</div>
+              <div className="meta">{s.measurements ? Object.keys(s.measurements).length + ' measurements' : 'No measurements'}</div>
             </li>
           ))}
-      </ul>
+        </ul>
+      </div>
 
       {selectedScan && (
         <div>
           <div className="modal-backdrop" onClick={() => setSelectedScan(null)} />
-          <div className="modal-panel" role="dialog" aria-modal="true">
+          <div className="modal-panel card" role="dialog" aria-modal="true">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <h4 style={{ margin: 0 }}>Patient: {selectedScan.patientName || selectedScan.patientUid}</h4>
-              <button onClick={() => setSelectedScan(null)} style={{ border: 'none', background: 'transparent', fontSize: 18 }}>✕</button>
+              <button className="modal-close" onClick={() => setSelectedScan(null)}>✕</button>
             </div>
-            <div style={{ marginBottom: 8, color: '#666' }}>Scan ID: {selectedScan.id}</div>
+            <div className="meta" style={{ marginBottom: 8 }}>Scan ID: {selectedScan.id}</div>
             {selectedScan.annotatedImageUrl && (
               <div style={{ marginBottom: 12 }}>
-                <img src={selectedScan.annotatedImageUrl} alt="Annotated" style={{ maxWidth: '100%', borderRadius: 8, border: '1px solid #ddd' }} />
+                <img src={selectedScan.annotatedImageUrl} alt="Annotated" style={{ maxWidth: '100%', borderRadius: 8 }} />
               </div>
             )}
-            {selectedScan.scale_mm_per_px && <div>Scale: {selectedScan.scale_mm_per_px} mm/px</div>}
+            {selectedScan.scale_mm_per_px && <div className="meta">Scale: {selectedScan.scale_mm_per_px} mm/px</div>}
             <div style={{ marginTop: 8 }}>{renderMeasurementsInline(selectedScan)}</div>
           </div>
         </div>

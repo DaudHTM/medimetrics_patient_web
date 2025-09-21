@@ -37,6 +37,12 @@ export default function Scan() {
 
 	const handleModeChange = (e) => setMode(e.target.value);
 
+	// Helper to make measurement keys human-friendly
+	const prettifyKey = (k) => {
+		if (!k) return '';
+		return k.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+	};
+
 	const handleUploadClick = () => {
 		if (fileInputRef.current) fileInputRef.current.click();
 	};
@@ -252,9 +258,9 @@ export default function Scan() {
 					style={{ display: 'none' }}
 					onChange={handleFileChange}
 				/>
-				<button onClick={handleUploadClick}>Upload Image</button>
-				<button onClick={handleTakeImageClick}>{cameraActive ? 'Stop Camera' : 'Take Image'}</button>
-				<button onClick={handleStartScan}>Start Scan</button>
+				<button className="btn btn-ghost" onClick={handleUploadClick}>Upload Image</button>
+				<button className="btn btn-primary" onClick={handleTakeImageClick}>{cameraActive ? 'Stop Camera' : 'Take Image'}</button>
+				<button className="btn btn-primary" onClick={handleStartScan}>Start Scan</button>
 			</div>
 
 			{error && <div className="error">{error}</div>}
@@ -263,8 +269,8 @@ export default function Scan() {
 				<div className="camera">
 					<video ref={videoRef} playsInline muted className="video-preview" />
 					<div>
-						<button onClick={handleCapture}>Capture Photo</button>
-						<button onClick={stopCamera}>Cancel</button>
+						<button className="btn btn-primary" onClick={handleCapture}>Capture Photo</button>
+						<button className="btn btn-ghost" onClick={stopCamera}>Cancel</button>
 					</div>
 				</div>
 			)}
@@ -279,14 +285,25 @@ export default function Scan() {
 					{loading && <div className="loading">Uploading image and running scan...</div>}
 
 					{measurements && (
-						<div className="scan-result">
-							<h3>Scan result</h3>
-							<ul>
-								{Object.entries(measurements).map(([k, v]) => (
-									<li key={k}>{k.replace(/_/g, ' ')}: {Number(v).toFixed(3)} mm</li>
-								))}
-							</ul>
-						</div>
+								<div className="scan-result">
+									<h3>Scan result</h3>
+									<div className="measure-grid">
+										{measurements && Object.entries(measurements).map(([k, v]) => (
+											<div className="measure-card" key={k}>
+												<div style={{display:'flex',alignItems:'center',width:'100%'}}>
+													<div>
+														<div className="measure-name">{prettifyKey(k)}</div>
+														<div style={{display:'flex',alignItems:'baseline',gap:6}}>
+															<div className="measure-value">{Number(v).toFixed(1)}</div>
+															<div className="measure-unit">mm</div>
+														</div>
+													</div>
+													<div className="measure-icon" aria-hidden>🔍</div>
+												</div>
+											</div>
+										))}
+									</div>
+								</div>
 					)}
 
 							{annotatedImageDataUrl && (
@@ -302,7 +319,7 @@ export default function Scan() {
 							{scaleMmPerPx && <div className="scale">Scale: {scaleMmPerPx} mm/px</div>}
 
 							<div className="upload-results">
-								<button onClick={handleUploadResults} disabled={uploadingResults || !annotatedImageDataUrl}>
+								<button className="btn btn-primary" onClick={handleUploadResults} disabled={uploadingResults || !annotatedImageDataUrl}>
 									{uploadingResults ? 'Uploading...' : 'Upload Results'}
 								</button>
 								{uploadError && <div className="error">{uploadError}</div>}
