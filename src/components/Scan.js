@@ -20,6 +20,7 @@ export default function Scan() {
 	const canvasRef = useRef(null);
 	const streamRef = useRef(null);
 	const fileInputRef = useRef(null);
+	const cameraInputRef = useRef(null);
 	const { user } = useAuth();
 	const [uploadingResults, setUploadingResults] = useState(false);
 	const [uploadError, setUploadError] = useState(null);
@@ -88,12 +89,7 @@ export default function Scan() {
 	};
 
 	const handleTakeImageClick = () => {
-		if (cameraActive) {
-			// if already active, stop it
-			stopCamera();
-		} else {
-			startCamera();
-		}
+		if (cameraInputRef.current) cameraInputRef.current.click();
 	};
 
 	const handleCapture = () => {
@@ -261,22 +257,20 @@ export default function Scan() {
 					style={{ display: 'none' }}
 					onChange={handleFileChange}
 				/>
+				<input
+					ref={cameraInputRef}
+					type="file"
+					accept="image/*"
+					capture="environment"
+					style={{ display: 'none' }}
+					onChange={handleFileChange}
+				/>
 				<button className="btn btn-ghost" onClick={handleUploadClick}>Upload Image</button>
-				<button className="btn btn-primary" onClick={handleTakeImageClick}>{cameraActive ? 'Stop Camera' : 'Take Image'}</button>
+				<button className="btn btn-primary" onClick={handleTakeImageClick}>Take Image</button>
 				<button className="btn btn-primary" onClick={handleStartScan}>Start Scan</button>
 			</div>
 
 			{error && <div className="error">{error}</div>}
-
-			{cameraActive && (
-				<div className="camera">
-					<video ref={videoRef} playsInline muted className="video-preview" />
-					<div>
-						<button className="btn btn-primary" onClick={handleCapture}>Capture Photo</button>
-						<button className="btn btn-ghost" onClick={stopCamera}>Cancel</button>
-					</div>
-				</div>
-			)}
 
 			{imageSrc && (
 				<div className="preview">
